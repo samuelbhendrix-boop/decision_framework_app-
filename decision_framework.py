@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 
-st.title("Multi-Option Decision Assessment Framework")
-st.write("Compare multiple options using weighted categories and sub-criteria.")
+st.title("Table-Based Decision Assessment Tool")
+st.write("Enter multiple opportunities as rows, and fill in scores for each sub-criteria (1–6).")
 
 # -----------------------------
 # Define framework
@@ -31,6 +31,29 @@ framework = {
     }
 }
 
+# -----------------------------
+# Prepare columns for table
+# -----------------------------
+columns = ["Opportunity"]
+for category in framework:
+    for sub in framework[category]["subcriteria"]:
+        columns.append(sub)
+
+# -----------------------------
+# Create editable table
+# -----------------------------
+st.write("### Enter Opportunities and Scores")
+num_rows = st.number_input("Number of opportunities", min_value=1, max_value=20, value=3)
+if "table_df" not in st.session_state:
+    # Initialize empty table
+    data = {col: [""]*num_rows for col in columns}
+    st.session_state.table_df = pd.DataFrame(data)
+
+edited_df = st.data_editor(st.session_state.table_df, num_rows="dynamic")
+
+# -----------------------------
+# Map textual ratings to numeric
+# -----------------------------
 rating_map = {
     "Very Low": 1,
     "Low": 2,
@@ -41,50 +64,32 @@ rating_map = {
 }
 
 # -----------------------------
-# 1. Input Options
+# Calculate weighted scores if table filled
 # -----------------------------
-options_input = st.text_area("Enter options (one per line)", "Option A\nOption B\nOption C")
-options = [o.strip() for o in options_input.splitlines() if o.strip()]
-
-if options:
-    # -----------------------------
-    # 2. Collect scores for each option
-    # -----------------------------
-    option_scores = {}
-
-    for opt in options:
-        st.write(f"### Scores for {opt}")
-        option_scores[opt] = {}
-        for category, data in framework.items():
-            st.write(f"#### {category}")
-            option_scores[opt][category] = {}
-            for sub, weight in data["subcriteria"].items():
-                option_scores[opt][category][sub] = st.selectbox(
-                    f"{sub} ({category})",
-                    list(rating_map.keys()),
-                    index=2,
-                    key=f"{opt}_{category}_{sub}"
-                )
-
-    # -----------------------------
-    # 3. Calculate weighted scores
-    # -----------------------------
+if st.button("Calculate Scores"):
     total_scores = {}
     breakdown = {}
-    for opt in options:
-        breakdown[opt] = {}
+
+    for idx, row in edited_df.iterrows():
+        opportunity_name = row["Opportunity"]
+        breakdown[opportunity_name] = {}
         total = 0
         for category, data in framework.items():
-            cat_score = sum(rating_map[option_scores[opt][category][sub]] * weight 
-                            for sub, weight in data["subcriteria"].items())
+            cat_score = 0
+            for sub, weight in data["subcriteria"].items():
+                val = row[sub]
+                # If user entered text rating, convert to number
+                if isinstance(val, str):
+                    val_num = rating_map.get(val, 0)
+                else:
+                    val_num = float(val) if val != "" else 0
+                cat_score += val_num * weight
             cat_score_weighted = cat_score * data["weight"]
-            breakdown[opt][category] = cat_score_weighted
+            breakdown[opportunity_name][category] = cat_score_weighted
             total += cat_score_weighted
-        total_scores[opt] = total
+        total_scores[opportunity_name] = total
 
-    # -----------------------------
-    # 4. Display results
-    # -----------------------------
+    # Display breakdown
     st.write("### Weighted Scores by Category")
     df_breakdown = pd.DataFrame.from_dict(breakdown, orient="index")
     st.dataframe(df_breakdown)
@@ -95,29 +100,29 @@ if options:
     st.dataframe(df_total)
 
     best_option = df_total.index[0]
-    st.success(f"**Best Option:** {best_option}")
+    st.success(f"**Best Opportunity:** {best_option}")
 
     # -----------------------------
-    # 5. Visualization
+    # Visualization
     # -----------------------------
     st.write("### Comparison Chart")
     fig, ax = plt.subplots()
     df_total.plot(kind='bar', y="Total Score", legend=False, ax=ax, color='skyblue')
     ax.set_ylabel("Total Score")
-    ax.set_xlabel("Options")
+    ax.set_xlabel("Opportunities")
     ax.set_title("Decision Scores Comparison")
     st.pyplot(fig)
 
     # -----------------------------
-    # 6. Export results
+    # Export results
     # -----------------------------
     export_df = df_breakdown.copy()
-    export_df['Total Score'] = df_total['Total Score']
+    export_df["Total Score"] = df_total["Total Score"]
     csv = export_df.to_csv().encode('utf-8')
-
     st.download_button(
-        label="Download Full Framework CSV",
+        label="Download Full Table CSV",
         data=csv,
-        file_name="decision_framework_results.csv",
+        file_name="decision_framework_table.csv",
         mime='text/csv'
     )
+
